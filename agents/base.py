@@ -39,6 +39,14 @@ class ToolAgent(A2AServer):
                         "env": {"BRAVE_API_KEY": os.environ.get("BRAVE_API_KEY", "")},
                         "transport": "stdio",
                     },
+                    "everything-search": {
+                        "url": "https://mcpservers.org/servers/mamertofabian/mcp-everything-search/mcp",
+                        "transport": "streamable_http",
+                    },
+                    "excel": {
+                        "url": "https://mcpservers.org/servers/haris-musa/excel-mcp-server/mcp",
+                        "transport": "streamable_http",
+                    },
                 }
             )
         else:
