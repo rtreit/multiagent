@@ -1,5 +1,6 @@
 import threading
 import anyio
+import logging
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import FunctionTool
 from fastmcp.client import Client
@@ -8,6 +9,11 @@ from python_a2a.discovery.server import enable_discovery
 from python_a2a.server.http import run_server
 from python_a2a.models.agent import AgentCard
 from python_a2a.models import Message, TextContent, MessageRole
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("base_agent")
 
 class ToolAgent(A2AServer):
     def __init__(self, name: str, description: str, a2a_port: int, mcp_port: int, registry_url: str):
@@ -19,21 +25,28 @@ class ToolAgent(A2AServer):
         self._registry_url = registry_url
 
     def add_tool(self, fn, name: str):
+        logger.info(f"Adding tool: {name}")
         self.mcp.add_tool(FunctionTool.from_function(fn, name=name))
 
     def start_mcp(self):
+        logger.info(f"Starting MCP server on port {self.mcp_port}")
         threading.Thread(target=self.mcp.run, kwargs={"transport": "http", "host": "127.0.0.1", "port": self.mcp_port}, daemon=True).start()
 
     def start_a2a(self, host: str = "127.0.0.1", port: int = 0):
+        logger.info(f"Enabling discovery with registry at {self._registry_url}")
         enable_discovery(self, self._registry_url)
+        logger.info(f"Starting A2A server on {host}:{port}")
         run_server(self, host=host, port=port)
 
     def call_tool(self, name: str, args: dict):
+        logger.info(f"Calling tool: {name} with args: {args}")
         async def _call():
             async with self.client as c:
+                logger.info(f"Making async call to tool: {name}")
                 result = await c.call_tool(name, args)
                 text = result.structured_content.get("result") if result.structured_content else None
                 if text is None and result.content:
                     text = result.content[0].text
+                logger.info(f"Tool {name} returned: {text}")
                 return text
         return anyio.run(_call)

@@ -18,6 +18,7 @@ dependencies = [
     "python-a2a",
     "requests",
     "langgraph",
+    "pytest"
 ]
 
 [project.optional-dependencies]
