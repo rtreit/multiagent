@@ -1,7 +1,10 @@
 # multiagent
 
 This project demonstrates a minimal multi-agent system using `fastmcp` for tool servers,
-`python_a2a` for agent communication, and `langgraph` for orchestration.
+`python_a2a` for agent communication, and `langgraph` for orchestration. Real MCP servers
+are accessed through `MultiServerMCPClient` from `langchain-mcp-adapters`. Example
+connections include the community memory server and the Brave Search MCP server (requiring
+the `BRAVE_API_KEY` environment variable).
 
 Three agents are provided:
 

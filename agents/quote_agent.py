@@ -1,5 +1,8 @@
 from agents.base import ToolAgent
 from python_a2a.models import Message, TextContent, MessageRole
+import logging
+
+logger = logging.getLogger("quote_agent")
 
 class QuoteAgent(ToolAgent):
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
@@ -17,6 +20,18 @@ class QuoteAgent(ToolAgent):
     def handle_message(self, message: Message) -> Message:
         topic = message.content.text.strip().split(" ", 1)[-1]
         quote = self.call_tool("random_quote", {"topic": topic})
+        try:
+            self.call_remote_tool(
+                "memory",
+                "add_observations",
+                {
+                    "observations": [
+                        {"entityName": "quote_agent_history", "contents": [quote]}
+                    ]
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record quote in memory server: {e}")
         return Message(content=TextContent(text=quote), role=MessageRole.AGENT,
                        parent_message_id=message.message_id, conversation_id=message.conversation_id)
 

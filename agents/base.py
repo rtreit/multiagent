@@ -1,9 +1,11 @@
 import threading
 import anyio
 import logging
+import os
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import FunctionTool
 from fastmcp.client import Client
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from python_a2a.agent_flow.server.api import A2AServer
 from python_a2a.discovery.server import enable_discovery
 from python_a2a.server.http import run_server
@@ -23,6 +25,24 @@ class ToolAgent(A2AServer):
         self.mcp_port = mcp_port
         self.client = Client(f"http://localhost:{mcp_port}/mcp/")
         self._registry_url = registry_url
+        if not os.environ.get("DISABLE_REMOTE_MCP"):
+            self.remote_client = MultiServerMCPClient(
+                {
+                    "memory": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-memory"],
+                        "transport": "stdio",
+                    },
+                    "brave-search": {
+                        "command": "npx",
+                        "args": ["-y", "brave-search-mcp"],
+                        "env": {"BRAVE_API_KEY": os.environ.get("BRAVE_API_KEY", "")},
+                        "transport": "stdio",
+                    },
+                }
+            )
+        else:
+            self.remote_client = None
 
     def add_tool(self, fn, name: str):
         logger.info(f"Adding tool: {name}")
@@ -49,4 +69,17 @@ class ToolAgent(A2AServer):
                     text = result.content[0].text
                 logger.info(f"Tool {name} returned: {text}")
                 return text
+        return anyio.run(_call)
+
+    def call_remote_tool(self, server: str, tool: str, args: dict):
+        logger.info(f"Calling remote tool {tool} on {server} with {args}")
+        if self.remote_client is None:
+            raise RuntimeError("Remote MCP client disabled")
+        async def _call():
+            tools = await self.remote_client.get_tools(server_name=server)
+            tool_map = {t.name: t for t in tools}
+            if tool not in tool_map:
+                raise ValueError(f"Tool {tool} not found on server {server}")
+            result = await tool_map[tool].ainvoke(args)
+            return result
         return anyio.run(_call)

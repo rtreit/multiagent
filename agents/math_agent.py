@@ -1,5 +1,8 @@
 from agents.base import ToolAgent
 from python_a2a.models import Message, TextContent, MessageRole
+import logging
+
+logger = logging.getLogger("math_agent")
 
 class MathAgent(ToolAgent):
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
@@ -12,6 +15,19 @@ class MathAgent(ToolAgent):
     def handle_message(self, message: Message) -> Message:
         expr = message.content.text.strip().split(" ", 1)[-1]
         result = self.call_tool("calculate", {"expression": expr})
+        # Store the operation in the memory server for demonstration
+        try:
+            self.call_remote_tool(
+                "memory",
+                "add_observations",
+                {
+                    "observations": [
+                        {"entityName": "math_agent_history", "contents": [f"{expr}={result}"]}
+                    ]
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record math operation in memory server: {e}")
         return Message(content=TextContent(text=result), role=MessageRole.AGENT,
                        parent_message_id=message.message_id, conversation_id=message.conversation_id)
 
