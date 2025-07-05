@@ -23,6 +23,9 @@ Three agents are provided:
 - **Math Agent** – exposes a calculator via an MCP server.
 - **Quote Agent** – fetches random quotes.
 - **Search Agent** – searches the internet and coordinates the other agents using LangGraph.
+- **LangGraph LLM Agent** – example agent that wires an OpenAI LLM into the ToolAgent
+  using LangGraph's `create_react_agent`. It can call both local MCP tools and
+  any remote tools discovered via `MultiServerMCPClient`.
 
 Agents register with a discovery registry and communicate via the A2A protocol.
 Tests launch all agents and verify an end‑to‑end workflow where the Search Agent
