@@ -18,7 +18,8 @@ dependencies = [
     "python-a2a",
     "requests",
     "langgraph",
-    "pytest"
+    "pytest",
+    "langchain-mcp-adapters"
 ]
 
 [project.optional-dependencies]

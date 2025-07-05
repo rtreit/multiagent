@@ -45,16 +45,39 @@ class SearchAgent(ToolAgent):
 
         def search_web(state: WorkflowState):
             logger.info(f"Searching web for: {state['topic']}")
-            results = self.call_tool("search", {"query": state["topic"]})
-            logger.info(f"Found {len(results) if results else 0} results")
-            return {"result_count": len(results) if results else 0}
+            try:
+                result = self.call_remote_tool(
+                    "brave-search",
+                    "brave_web_search",
+                    {"query": state["topic"], "count": 3},
+                )
+                result_count = result.count("Title:") if isinstance(result, str) else 0
+            except Exception as e:
+                logger.warning(f"Remote search failed: {e}, falling back to local search")
+                results = self.call_tool("search", {"query": state["topic"]})
+                result_count = len(results) if results else 0
+            logger.info(f"Found {result_count} results")
+            return {"result_count": result_count}
 
         def multiply(state: WorkflowState):
             expr = f"{len(state['quote'])}*{state['result_count']}"
             logger.info(f"Calculating: {expr}")
             resp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
             logger.info(f"Result: {resp.content.text}")
-            return {"product": resp.content.text}
+            product = resp.content.text
+            try:
+                self.call_remote_tool(
+                    "memory",
+                    "add_observations",
+                    {
+                        "observations": [
+                            {"entityName": "search_agent_history", "contents": [f"{topic}:{product}"]}
+                        ]
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record search result in memory server: {e}")
+            return {"product": product}
 
         graph = StateGraph(WorkflowState)
         graph.add_node("quote", fetch_quote)

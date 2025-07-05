@@ -26,7 +26,7 @@ def wait(url: str, attempts: int = 30):
 
 
 def start(cmd):
-    env = dict(**os.environ, PYTHONPATH=".")
+    env = dict(**os.environ, PYTHONPATH=".", DISABLE_REMOTE_MCP="1")
     # Use the same Python interpreter that's running the tests
     python_executable = sys.executable
     # Capture stdout and stderr but don't redirect to PIPE to avoid blocking
