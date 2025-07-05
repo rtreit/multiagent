@@ -4,6 +4,8 @@ from python_a2a.client import A2AClient
 # dummy search
 from typing import TypedDict
 
+from langgraph.graph import StateGraph, START, END
+
 class WorkflowState(TypedDict):
     topic: str
     quote: str | None
