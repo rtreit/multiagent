@@ -26,18 +26,13 @@ class ToolAgent(A2AServer):
         self.client = Client(f"http://localhost:{mcp_port}/mcp/")
         self._registry_url = registry_url
         if not os.environ.get("DISABLE_REMOTE_MCP"):
-            memory_url = os.environ.get("MEMORY_SERVER_URL")
-            if memory_url:
-                memory_cfg = {"url": memory_url, "transport": "streamable_http"}
-            else:
-                memory_cfg = {
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-memory"],
-                    "transport": "stdio",
-                }
             self.remote_client = MultiServerMCPClient(
                 {
-                    "memory": memory_cfg,
+                    "memory": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-memory"],
+                        "transport": "stdio",
+                    },
                     "brave-search": {
                         "command": "npx",
                         "args": ["-y", "brave-search-mcp"],

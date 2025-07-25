@@ -3,7 +3,7 @@ import subprocess
 import sys
 import time
 import requests
-import anyio
+
 from python_a2a.client import A2AClient
 from python_a2a.models import Message, TextContent, MessageRole
 
@@ -16,7 +16,6 @@ SEARCH_PORT = 9013
 SEARCH_MCP = 8023
 LLM_PORT = 9014
 LLM_MCP = 8024
-MEMORY_MCP = 8030
 
 
 def wait(url: str, attempts: int = 30):
@@ -30,7 +29,7 @@ def wait(url: str, attempts: int = 30):
 
 
 def start(cmd):
-    env = dict(**os.environ, PYTHONPATH=".", MEMORY_SERVER_URL=f"http://localhost:{MEMORY_MCP}/mcp")
+    env = dict(**os.environ, PYTHONPATH=".")
     # Use the same Python interpreter that's running the tests
     python_executable = sys.executable
     # Capture stdout and stderr but don't redirect to PIPE to avoid blocking
@@ -45,10 +44,6 @@ def start(cmd):
 def test_workflow():
     procs = []
     try:
-        print("\n=== Starting Memory Server ===")
-        procs.append(start(["memory_server.py", str(MEMORY_MCP)]))
-        wait(f"http://localhost:{MEMORY_MCP}/mcp")
-        print(f"Memory server started on port {MEMORY_MCP}")
         print("\n=== Starting Registry ===")
         procs.append(start(["registry.py", str(REGISTRY_PORT)]))
         wait(f"http://localhost:{REGISTRY_PORT}/registry/agents")
