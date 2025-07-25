@@ -3,6 +3,7 @@ import subprocess
 import sys
 import time
 import requests
+
 from python_a2a.client import A2AClient
 from python_a2a.models import Message, TextContent, MessageRole
 
@@ -13,6 +14,8 @@ QUOTE_PORT = 9012
 QUOTE_MCP = 8022
 SEARCH_PORT = 9013
 SEARCH_MCP = 8023
+LLM_PORT = 9014
+LLM_MCP = 8024
 
 
 def wait(url: str, attempts: int = 30):
@@ -26,7 +29,7 @@ def wait(url: str, attempts: int = 30):
 
 
 def start(cmd):
-    env = dict(**os.environ, PYTHONPATH=".", DISABLE_REMOTE_MCP="1")
+    env = dict(**os.environ, PYTHONPATH=".")
     # Use the same Python interpreter that's running the tests
     python_executable = sys.executable
     # Capture stdout and stderr but don't redirect to PIPE to avoid blocking
@@ -61,8 +64,13 @@ def test_workflow():
         wait(f"http://localhost:{SEARCH_PORT}/a2a")
         print(f"Search Agent started on port {SEARCH_PORT}, MCP on port {SEARCH_MCP}")
 
-        print("\n=== Sending message to Search Agent ===")
-        client = A2AClient(f"http://localhost:{SEARCH_PORT}")
+        print("\n=== Starting LLM Agent ===")
+        procs.append(start(["agents/llm_agent.py", f"http://localhost:{REGISTRY_PORT}", str(LLM_PORT), str(LLM_MCP)]))
+        wait(f"http://localhost:{LLM_PORT}/a2a")
+        print(f"LLM Agent started on port {LLM_PORT}, MCP on port {LLM_MCP}")
+
+        print("\n=== Sending message to LLM Agent ===")
+        client = A2AClient(f"http://localhost:{LLM_PORT}")
         message = Message(content=TextContent(text="life"), role=MessageRole.USER)
         print(f"Message: '{message.content.text}'")
         response = client.send_message(message)
@@ -72,3 +80,5 @@ def test_workflow():
     finally:
         for p in procs:
             p.terminate()
+
+
