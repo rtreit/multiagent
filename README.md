@@ -1,53 +1,222 @@
-# multiagent
+# Multiagent Reference Implementation
 
-This project demonstrates a minimal multi-agent system using **FastMCP** for tool servers,
-**python-a2a** for agent communication, and **langgraph** for orchestration.  Real MCP servers
-are accessed through `MultiServerMCPClient` from `langchain-mcp-adapters`.  Example connections
-include the community memory server, the Brave Search MCP server (requiring the
-`BRAVE_API_KEY` environment variable) and additional public servers for searching everything
-and manipulating Excel files.
+A clean, production-ready reference implementation of a multi-agent system using **FastMCP** for tool servers, **python-a2a** for agent communication, and **LangGraph** for orchestration workflows. This project demonstrates best practices for building scalable, MCP-compatible agent architectures.
 
-Each agent can also use an OpenAI powered A2A client for reasoning.  The default model is
-`gpt-4o` and the API key is read from the `OPENAI_API_KEY` environment variable.  The model
-can be changed when launching an agent by passing `--model` to the `python_a2a` CLI or when
-calling `AgentManager.create_openai_agent()`.
+## Key Features
 
-For example to run an agent with a different model:
+🏗️ **Clean Architecture**
+- Generic MCP adapter pattern supporting any compatible MCP server
+- Auto-detection of server capabilities with graceful fallbacks
+- Clean separation between agent logic and MCP integration
 
-```bash
-python -m python_a2a.cli openai --api-key $OPENAI_API_KEY --model gpt-3.5-turbo
+🔧 **Tool Integration**
+- FastMCP servers expose agent capabilities as standardized tools
+- Automatic tool discovery and registration via A2A protocol
+- Support for both local tools and remote MCP server connections
+
+🤖 **Multiple Agent Types**
+- **Math Agent**: Performs mathematical calculations
+- **Quote Agent**: Generates inspirational quotes
+- **Search Agent**: Orchestrates complex workflows using LangGraph
+- **LLM Agent**: OpenAI-powered reasoning with tool access
+
+🌐 **Network Communication**
+- A2A (Agent-to-Agent) protocol for seamless inter-agent communication
+- Service registry for automatic agent discovery
+- HTTP-based endpoints with JSON messaging
+
+🧠 **Memory & State**
+- Optional MCP memory server integration for persistent storage
+- Knowledge graph pattern support with automatic entity management
+- Graceful degradation when memory services are unavailable
+
+## Architecture Overview
+
+### Core Components
+
+**Base Agent (`agents/base.py`)**
+- `ToolAgent` class providing MCP server and A2A communication
+- Generic `store_data()` and `retrieve_data()` methods for any MCP server
+- Automatic tool registration and discovery capabilities
+- Thread-safe async operation handling
+
+**MCP Adapters (`agents/mcp_adapters.py`)**
+- `KnowledgeGraphAdapter` for knowledge graph-style memory servers
+- `KeyValueAdapter` for simple key-value storage servers
+- `MCPAdapterRegistry` with auto-detection capabilities
+- Clean abstraction layer for different server types
+
+**Service Registry (`registry.py`)**
+- Centralized agent discovery and registration
+- Health monitoring with automatic heartbeat management
+- RESTful API for agent lookup and status
+
+**Search Orchestration (`agents/search_agent.py`)**
+- LangGraph workflow demonstrating agent coordination
+- Quote fetching → Web search → Mathematical calculation pipeline
+- Fallback mechanisms for robust operation
+
+### Agent Communication Flow
+
+```
+[Client Request] → [Target Agent] → [A2A Protocol] → [Other Agents]
+                                 → [MCP Tools] → [Memory/External Services]
 ```
 
-Three agents are provided:
+## Quick Start
 
-- **Math Agent** – exposes a calculator via an MCP server.
-- **Quote Agent** – fetches random quotes.
-- **Search Agent** – searches the internet and coordinates the other agents using LangGraph.
-- **LangGraph LLM Agent** – example agent that wires an OpenAI LLM into the ToolAgent
-  using LangGraph's `create_react_agent`. It can call both local MCP tools and
-  any remote tools discovered via `MultiServerMCPClient`.
+### 1. Install Dependencies
 
-Agents register with a discovery registry and communicate via the A2A protocol.
-Tests launch all agents and verify an end‑to‑end workflow where the Search Agent
-uses the other agents to answer a task.
+```bash
+pip install -e .
+```
 
-## Architecture
+### 2. Optional: Set up External Services
 
-`agents/base.py` defines a `ToolAgent` class that starts both an A2A server and a
-FastMCP tool server.  Each subclass registers with `registry.py` so that other
-agents can discover it.  Local tools are added to the agent's MCP server using
-`self.add_tool()`, while remote tools are reached through `MultiServerMCPClient`.
-The `DISABLE_REMOTE_MCP` environment variable prevents connecting to external
-servers during testing.
+```bash
+# For OpenAI-powered reasoning (optional)
+export OPENAI_API_KEY="your-key-here"
 
-`agents/search_agent.py` demonstrates a small LangGraph workflow.  It requests a
-quote from the Quote Agent, performs a Brave search (falling back to a local
-search tool if the remote call fails) and finally asks the Math Agent to multiply
-the length of the quote by the number of search results.  The combined response
-is returned to the user.
+# For Brave Search integration (optional)  
+export BRAVE_API_KEY="your-key-here"
 
-## Web interface
+# For memory server (optional)
+npm install -g @modelcontextprotocol/server-memory
+```
 
-A small Flask app (`gui.py`) provides a simple chat UI. Run it alongside the agents
-and open `http://localhost:8000` to send messages to any agent. Responses stream
-live so you can watch each agent think and interact with MCP tools.
+### 3. Run the System
+
+**Start all agents with the test suite:**
+```bash
+pytest tests/test_e2e.py -v
+```
+
+**Or run individual agents:**
+```bash
+# Start registry
+python registry.py
+
+# Start agents (in separate terminals)
+python -m agents.math_agent http://localhost:9010 9011 8021
+python -m agents.quote_agent http://localhost:9010 9012 8022
+python -m agents.search_agent http://localhost:9010 9013 8023
+```
+
+**Web Interface:**
+```bash
+python gui.py
+# Open http://localhost:8000 for chat interface
+```
+
+## Testing
+
+The comprehensive test suite (`tests/test_e2e.py`) verifies:
+- ✅ Agent registration and discovery
+- ✅ MCP server functionality
+- ✅ Inter-agent communication
+- ✅ End-to-end workflow execution
+- ✅ Memory integration (when available)
+- ✅ Graceful error handling
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with detailed output
+pytest tests/test_e2e.py -v -s
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | OpenAI API access for LLM agents | None |
+| `BRAVE_API_KEY` | Brave Search API access | None |
+| `MEMORY_SERVER_URL` | MCP memory server endpoint | Auto-detect |
+| `DISABLE_REMOTE_MCP` | Disable external MCP connections | False |
+
+### MCP Server Integration
+
+The system automatically detects and adapts to different MCP server types:
+
+- **Knowledge Graph Servers**: Automatic entity creation and relationship management
+- **Key-Value Stores**: Simple storage with fallback support
+- **Document Stores**: Text-based storage and retrieval
+- **Custom Servers**: Extensible adapter pattern for new server types
+
+## Extending the System
+
+### Adding New Agents
+
+1. Inherit from `ToolAgent` in `agents/base.py`
+2. Implement agent-specific tools with `self.add_tool()`
+3. Override `handle_message()` for custom behavior
+4. Register with the discovery registry
+
+### Adding MCP Server Support
+
+1. Create a new adapter class in `agents/mcp_adapters.py`
+2. Implement `store_data()` and `retrieve_data()` methods
+3. Add detection logic to `auto_detect_adapter()`
+4. Register the adapter with `MCPAdapterRegistry`
+
+### Custom Workflows
+
+Use LangGraph for complex agent orchestration:
+
+```python
+from langgraph import StateGraph, END
+from agents.base import ToolAgent
+
+class CustomWorkflowAgent(ToolAgent):
+    def create_workflow(self):
+        workflow = StateGraph(dict)
+        workflow.add_node("step1", self.step1)
+        workflow.add_node("step2", self.step2)
+        workflow.add_edge("step1", "step2")
+        workflow.add_edge("step2", END)
+        return workflow.compile()
+```
+
+## Production Considerations
+
+- **Security**: Validate all inter-agent communications
+- **Monitoring**: Use structured logging for observability
+- **Scaling**: Deploy agents across multiple processes/containers
+- **Error Handling**: All operations include graceful fallbacks
+- **Performance**: Async operations with proper thread management
+
+## Project Structure
+
+```
+multiagent/
+├── agents/                 # Agent implementations
+│   ├── base.py            # Core ToolAgent class with MCP integration
+│   ├── mcp_adapters.py    # Generic MCP server adapters
+│   ├── math_agent.py      # Mathematical calculation agent
+│   ├── quote_agent.py     # Quote generation agent
+│   ├── search_agent.py    # LangGraph orchestration agent
+│   └── llm_agent.py       # OpenAI-powered reasoning agent
+├── tests/                 # Comprehensive test suite
+│   └── test_e2e.py        # End-to-end system verification
+├── registry.py            # Service discovery and registration
+├── gui.py                 # Web interface for agent interaction
+├── quick_start.py         # Interactive demonstration and setup guide
+└── README.md              # This file
+```
+
+## Quick Demo
+
+```bash
+# Interactive quick start guide
+python quick_start.py
+
+# Or run the comprehensive test suite directly
+pytest tests/ -v
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
