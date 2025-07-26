@@ -65,7 +65,10 @@ class SearchAgent(ToolAgent):
             resp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
             logger.info(f"Result: {resp.content.text}")
             product = resp.content.text
-            self.store_memory("search_agent_history", f"{topic}:{product}")
+            
+            # Store result using generic storage
+            self.store_data("memory", "search_agent_history", f"{topic}:{product}")
+            
             return {"product": product}
 
         graph = StateGraph(WorkflowState)

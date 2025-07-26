@@ -15,8 +15,10 @@ class MathAgent(ToolAgent):
     def handle_message(self, message: Message) -> Message:
         expr = message.content.text.strip().split(" ", 1)[-1]
         result = self.call_tool("calculate", {"expression": expr})
-        # Store the operation in the memory server for demonstration
-        self.store_memory("math_agent_history", f"{expr}={result}")
+        
+        # Store result using generic storage (works with any compatible MCP server)
+        self.store_data("memory", "math_agent_history", f"{expr}={result}")
+        
         return Message(content=TextContent(text=result), role=MessageRole.AGENT,
                        parent_message_id=message.message_id, conversation_id=message.conversation_id)
 

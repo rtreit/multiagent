@@ -78,10 +78,8 @@ class LangGraphToolAgent(ToolAgent):
             results = [f"{topic} result {i}" for i in range(3)]
             expr = f"{len(qresp.content.text)}*{len(results)}"
             mresp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
-            try:
-                self.store_memory("llm_agent_history", f"{topic}:{mresp.content.text}")
-            except Exception as e:
-                logger.warning(f"Failed to record llm result in memory server: {e}")
+            # Store interaction in memory using generic storage
+            self.store_data("memory", "llm_agent_history", f"{topic}:{mresp.content.text}")
             text = f"Quote: {qresp.content.text}\nProduct: {mresp.content.text}"
         else:
             if not hasattr(self, "executor"):
