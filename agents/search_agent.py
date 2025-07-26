@@ -65,18 +65,7 @@ class SearchAgent(ToolAgent):
             resp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
             logger.info(f"Result: {resp.content.text}")
             product = resp.content.text
-            try:
-                self.call_remote_tool(
-                    "memory",
-                    "add_observations",
-                    {
-                        "observations": [
-                            {"entityName": "search_agent_history", "contents": [f"{topic}:{product}"]}
-                        ]
-                    },
-                )
-            except Exception as e:
-                logger.warning(f"Failed to record search result in memory server: {e}")
+            self.store_memory("search_agent_history", f"{topic}:{product}")
             return {"product": product}
 
         graph = StateGraph(WorkflowState)

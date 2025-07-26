@@ -91,3 +91,42 @@ class ToolAgent(A2AServer):
             result = await tool_map[tool].ainvoke(args)
             return result
         return anyio.run(_call)
+
+    def store_memory(self, entity_name: str, content: str):
+        """Safely store content in memory server, creating entity if needed"""
+        if self.remote_client is None:
+            logger.warning("Remote MCP client disabled")
+            return
+        
+        try:
+            async def _store():
+                tools = await self.remote_client.get_tools(server_name="memory")
+                tool_map = {t.name: t for t in tools}
+                
+                # Try to add observations first
+                try:
+                    result = await tool_map["add_observations"].ainvoke({
+                        "observations": [{"entityName": entity_name, "contents": [content]}]
+                    })
+                    return result
+                except Exception as e:
+                    if "not found" in str(e):
+                        # Entity doesn't exist, create it first
+                        logger.info(f"Creating memory entity: {entity_name}")
+                        await tool_map["create_entities"].ainvoke({
+                            "entities": [{"name": entity_name, "entityType": "agent", "observations": []}]
+                        })
+                        # Now add the observation
+                        result = await tool_map["add_observations"].ainvoke({
+                            "observations": [{"entityName": entity_name, "contents": [content]}]
+                        })
+                        return result
+                    else:
+                        raise e
+            
+            result = anyio.run(_store)
+            logger.info(f"Successfully stored in memory: {entity_name}")
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to store in memory server: {e}")
+            return None

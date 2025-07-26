@@ -20,18 +20,7 @@ class QuoteAgent(ToolAgent):
     def handle_message(self, message: Message) -> Message:
         topic = message.content.text.strip().split(" ", 1)[-1]
         quote = self.call_tool("random_quote", {"topic": topic})
-        try:
-            self.call_remote_tool(
-                "memory",
-                "add_observations",
-                {
-                    "observations": [
-                        {"entityName": "quote_agent_history", "contents": [quote]}
-                    ]
-                },
-            )
-        except Exception as e:
-            logger.warning(f"Failed to record quote in memory server: {e}")
+        self.store_memory("quote_agent_history", quote)
         return Message(content=TextContent(text=quote), role=MessageRole.AGENT,
                        parent_message_id=message.message_id, conversation_id=message.conversation_id)
 

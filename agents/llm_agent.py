@@ -79,15 +79,7 @@ class LangGraphToolAgent(ToolAgent):
             expr = f"{len(qresp.content.text)}*{len(results)}"
             mresp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
             try:
-                self.call_remote_tool(
-                    "memory",
-                    "add_observations",
-                    {
-                        "observations": [
-                            {"entityName": "llm_agent_history", "contents": [f"{topic}:{mresp.content.text}"]}
-                        ]
-                    },
-                )
+                self.store_memory("llm_agent_history", f"{topic}:{mresp.content.text}")
             except Exception as e:
                 logger.warning(f"Failed to record llm result in memory server: {e}")
             text = f"Quote: {qresp.content.text}\nProduct: {mresp.content.text}"
