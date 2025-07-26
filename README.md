@@ -46,6 +46,57 @@ search tool if the remote call fails) and finally asks the Math Agent to multipl
 the length of the quote by the number of search results.  The combined response
 is returned to the user.
 
+### Inter-agent workflow
+
+When each agent starts it registers its A2A endpoint with `registry.py` using
+`enable_discovery()`. The registry allows agents to locate each other at
+runtime.  Every agent also launches a FastMCP server exposing its local tools.
+
+The Search Agent illustrates a typical interaction:
+
+1. Discover all agent URLs from the registry.
+2. Send a message to the Quote Agent via A2A.
+3. Send a message to the Math Agent via A2A.
+4. Optionally call external MCP servers (e.g. Brave Search) using
+   `MultiServerMCPClient`.
+
+```
+        +-----------+        (register)        +-----------+
+        |  Agents   | -----------------------> | Registry  |
+        +-----------+                          +-----------+
+               |                                     ^
+               | discovery                            |
+               v                                     |
+        +-----------+       A2A calls        +-----------+
+        | Quote     | <--------------------> |  Math     |
+        | Agent     |                       |  Agent    |
+        +-----------+                       +-----------+
+               ^                                 ^
+               |                                 |
+               +-----------+     A2A      +------+------+
+                           |<------------>|  Search     |
+                           |              |  Agent      |
+                           +--------------+-------------+
+                                          |
+                                          v
+                                 External MCP servers
+```
+
+### Adding a new agent
+
+1. Create a subclass of `ToolAgent` in `agents/` and define the tools you want
+   to expose.
+2. Call `self.add_tool()` for each tool and `self.start_mcp()` inside the
+   constructor to launch the FastMCP server.
+3. Implement `handle_message()` to process A2A messages.  Inside this method you
+   can call your own tools or use `self.safe_remote_tool_call()` to reach remote
+   MCP servers.
+4. Provide a small `main()` that creates the agent with the desired A2A and MCP
+   ports and then calls `start_a2a()`. The call to `start_a2a()` automatically
+   registers the agent with the registry so others can discover it.
+5. Other agents can now send it A2A messages or, if needed, invoke its MCP tools
+   directly by adding its MCP URL to their `MultiServerMCPClient` configuration.
+
 ## Web interface
 
 A small Flask app (`gui.py`) provides a simple chat UI. Run it alongside the agents
