@@ -95,11 +95,17 @@ class LangGraphToolAgent(ToolAgent):
         
         # Check if this is a query about local agents/system capabilities
         agent_discovery_keywords = ['agents', 'skills', 'capabilities', 'interact with', 'other agents', 
-                                   'available agents', 'what can you do', 'system agents']
+                                   'available agents', 'what can you do', 'system agents', 'refresh discovery']
         
         if any(keyword in text_input.lower() for keyword in agent_discovery_keywords):
             # This is asking about local agents - use cached startup discovery
             logger.info(f"[LLM] Detected agent discovery query, using cached agent discovery")
+            
+            # Check if this is a refresh request
+            if 'refresh' in text_input.lower():
+                logger.info(f"[LLM] Refresh requested, updating discovery cache")
+                self.refresh_agent_discovery()
+            
             try:
                 # Use cached discovered agents from startup
                 discovered_agents = self.get_discovered_agents()
@@ -117,12 +123,16 @@ class LangGraphToolAgent(ToolAgent):
                         agent_info.append(f"**{agent_name}**: {agent_desc}\n  Skills: None discovered")
                 
                 if agent_info:
-                    text = f"I can interact with the following agents in this multi-agent system:\n\n" + "\n\n".join(agent_info)
+                    refresh_note = " (just refreshed)" if 'refresh' in text_input.lower() else ""
+                    text = f"I can interact with the following agents in this multi-agent system{refresh_note}:\n\n" + "\n\n".join(agent_info)
                     text += f"\n\nThese {len(discovered_agents)} agents work together through the A2A (Agent-to-Agent) protocol to coordinate complex tasks and share capabilities."
                     text += f"\n\nDiscovery status: {'✓ Completed at startup' if self.is_discovery_completed() else '⚠ In progress'}"
+                    text += f"\n\n💡 Note: I automatically check for new agents every minute. Say 'refresh discovery' to check immediately."
                 else:
                     discovery_status = "completed" if self.is_discovery_completed() else "still in progress"
-                    text = f"I don't currently see any other agents registered in the system (discovery {discovery_status}). The system supports Math, Quote, Search, and other specialized agents when they're running."
+                    refresh_note = " (just refreshed)" if 'refresh' in text_input.lower() else ""
+                    text = f"I don't currently see any other agents registered in the system{refresh_note} (discovery {discovery_status}). No other agents appear to be running at the moment."
+                    text += f"\n\n💡 Note: I automatically check for new agents every minute. Say 'refresh discovery' to check immediately."
                     
             except Exception as e:
                 logger.warning(f"[LLM] Cached agent discovery failed ({e}), falling back to OpenAI API")

@@ -57,9 +57,11 @@ class ToolAgent(A2AServer):
         # Track tools for A2A agent card skills
         self._tools = {}
         
-        # Agent discovery cache - populated at startup
+        # Agent discovery cache - populated at startup and updated periodically
         self._discovered_agents = {}
         self._discovery_completed = False
+        self._discovery_thread = None
+        self._stop_discovery = False
         
         # Create Flask app for OpenAI-compatible API
         self.flask_app = Flask(f"{name}_api")
@@ -134,53 +136,79 @@ class ToolAgent(A2AServer):
         # Perform startup agent discovery
         self._perform_startup_discovery()
         
+        # Start periodic discovery in background
+        self._start_periodic_discovery()
+        
         logger.info(f"Starting A2A server on {host}:{port}")
         run_server(self, host=host, port=port)
 
     def _perform_startup_discovery(self):
-        """Discover and cache other agents at startup."""
+        """Discover and cache other agents at startup with retries."""
         try:
             from python_a2a.discovery.client import DiscoveryClient
             discovery_client = DiscoveryClient(self._registry_url)
             
-            # Wait a moment for other agents to potentially register
-            import time
-            time.sleep(2)
+            # Wait for registry and other agents to start with retries
+            max_attempts = 8  # Increased from 5 to 8
+            wait_time = 5     # Increased from 3 to 5 seconds
             
-            agents = discovery_client.discover()
-            logger.info(f"[STARTUP DISCOVERY] Found {len(agents)} agents")
-            
-            for agent in agents:
-                # Don't include self in discovered agents
-                if agent.name != self.name:
-                    # Extract skills information
-                    skills = []
-                    if hasattr(agent, 'skills') and agent.skills:
-                        for skill in agent.skills:
-                            if hasattr(skill, 'name') and hasattr(skill, 'description'):
-                                skills.append({
-                                    'name': skill.name,
-                                    'description': skill.description,
-                                    'type': getattr(skill, 'type', 'function')
-                                })
-                            elif isinstance(skill, dict):
-                                skills.append({
-                                    'name': skill.get('name', 'unknown'),
-                                    'description': skill.get('description', 'no description'),
-                                    'type': skill.get('type', 'function')
-                                })
+            for attempt in range(max_attempts):
+                logger.info(f"[STARTUP DISCOVERY] Attempt {attempt + 1}/{max_attempts}")
+                
+                try:
+                    agents = discovery_client.discover()
+                    other_agents = [agent for agent in agents if agent.name != self.name]
                     
-                    self._discovered_agents[agent.name] = {
-                        'name': agent.name,
-                        'description': agent.description,
-                        'url': agent.url,
-                        'skills': skills
-                    }
+                    logger.info(f"[STARTUP DISCOVERY] Found {len(agents)} total agents, {len(other_agents)} peers")
                     
-                    logger.info(f"[STARTUP DISCOVERY] Cached {agent.name}: {len(skills)} skills")
+                    # Only proceed if we found other agents
+                    if other_agents:
+                        # Process discovered agents
+                        for agent in other_agents:
+                            # Extract skills information
+                            skills = []
+                            if hasattr(agent, 'skills') and agent.skills:
+                                for skill in agent.skills:
+                                    if hasattr(skill, 'name') and hasattr(skill, 'description'):
+                                        skills.append({
+                                            'name': skill.name,
+                                            'description': skill.description,
+                                            'type': getattr(skill, 'type', 'function')
+                                        })
+                                    elif isinstance(skill, dict):
+                                        skills.append({
+                                            'name': skill.get('name', 'unknown'),
+                                            'description': skill.get('description', 'no description'),
+                                            'type': skill.get('type', 'function')
+                                        })
+                            
+                            self._discovered_agents[agent.name] = {
+                                'name': agent.name,
+                                'description': agent.description,
+                                'url': agent.url,
+                                'skills': skills
+                            }
+                            
+                            logger.info(f"[STARTUP DISCOVERY] Cached {agent.name}: {len(skills)} skills")
+                        
+                        self._discovery_completed = True
+                        logger.info(f"[STARTUP DISCOVERY] Completed - cached {len(self._discovered_agents)} peer agents")
+                        return
+                        
+                    else:
+                        logger.info(f"[STARTUP DISCOVERY] No peers found yet, waiting {wait_time}s before retry...")
+                        import time
+                        time.sleep(wait_time)
+                        
+                except Exception as e:
+                    logger.warning(f"[STARTUP DISCOVERY] Attempt {attempt + 1} failed: {e}")
+                    if attempt < max_attempts - 1:
+                        import time
+                        time.sleep(wait_time)
             
+            # Mark as completed even if we didn't find agents
             self._discovery_completed = True
-            logger.info(f"[STARTUP DISCOVERY] Completed - cached {len(self._discovered_agents)} peer agents")
+            logger.warning(f"[STARTUP DISCOVERY] Completed with retries - cached {len(self._discovered_agents)} peer agents")
             
         except Exception as e:
             logger.warning(f"[STARTUP DISCOVERY] Failed: {e}")
@@ -198,6 +226,108 @@ class ToolAgent(A2AServer):
         """Manually refresh the agent discovery cache."""
         logger.info("Refreshing agent discovery cache...")
         self._perform_startup_discovery()
+
+    def _start_periodic_discovery(self):
+        """Start periodic discovery in a background thread."""
+        if self._discovery_thread is None:
+            import threading
+            self._discovery_thread = threading.Thread(
+                target=self._periodic_discovery_worker, 
+                daemon=True, 
+                name=f"{self.name}_discovery"
+            )
+            self._discovery_thread.start()
+            logger.info(f"[PERIODIC DISCOVERY] Started background discovery thread")
+
+    def _periodic_discovery_worker(self):
+        """Background worker that periodically checks for new agents."""
+        import time
+        
+        discovery_interval = 60  # Check every 60 seconds
+        
+        while not self._stop_discovery:
+            try:
+                time.sleep(discovery_interval)
+                if self._stop_discovery:
+                    break
+                    
+                logger.debug(f"[PERIODIC DISCOVERY] Checking for agent changes...")
+                old_agent_names = set(self._discovered_agents.keys())
+                
+                # Perform discovery
+                self._perform_discovery_update()
+                
+                new_agent_names = set(self._discovered_agents.keys())
+                
+                # Check for new agents
+                added_agents = new_agent_names - old_agent_names
+                removed_agents = old_agent_names - new_agent_names
+                
+                if added_agents:
+                    logger.info(f"[PERIODIC DISCOVERY] New agents discovered: {', '.join(added_agents)}")
+                    
+                if removed_agents:
+                    logger.info(f"[PERIODIC DISCOVERY] Agents went offline: {', '.join(removed_agents)}")
+                    
+                if not added_agents and not removed_agents:
+                    logger.debug(f"[PERIODIC DISCOVERY] No changes detected ({len(new_agent_names)} agents)")
+                    
+            except Exception as e:
+                logger.warning(f"[PERIODIC DISCOVERY] Error during periodic check: {e}")
+                
+        logger.info(f"[PERIODIC DISCOVERY] Background discovery thread stopped")
+
+    def _perform_discovery_update(self):
+        """Perform a discovery update without the startup retries."""
+        try:
+            from python_a2a.discovery.client import DiscoveryClient
+            discovery_client = DiscoveryClient(self._registry_url)
+            
+            agents = discovery_client.discover()
+            other_agents = [agent for agent in agents if agent.name != self.name]
+            
+            # Clear existing cache
+            self._discovered_agents.clear()
+            
+            # Process discovered agents
+            for agent in other_agents:
+                # Extract skills information
+                skills = []
+                if hasattr(agent, 'skills') and agent.skills:
+                    for skill in agent.skills:
+                        if hasattr(skill, 'name') and hasattr(skill, 'description'):
+                            skills.append({
+                                'name': skill.name,
+                                'description': skill.description,
+                                'type': getattr(skill, 'type', 'function')
+                            })
+                        elif isinstance(skill, dict):
+                            skills.append({
+                                'name': skill.get('name', 'unknown'),
+                                'description': skill.get('description', 'no description'),
+                                'type': skill.get('type', 'function')
+                            })
+                
+                self._discovered_agents[agent.name] = {
+                    'name': agent.name,
+                    'description': agent.description,
+                    'url': agent.url,
+                    'skills': skills
+                }
+            
+            # Update discovery status
+            if not self._discovery_completed:
+                self._discovery_completed = True
+                
+        except Exception as e:
+            logger.warning(f"[PERIODIC DISCOVERY] Update failed: {e}")
+
+    def stop_discovery(self):
+        """Stop the periodic discovery thread."""
+        self._stop_discovery = True
+        if self._discovery_thread and self._discovery_thread.is_alive():
+            self._discovery_thread.join(timeout=5)
+            logger.info(f"[PERIODIC DISCOVERY] Stopped")
 
     def call_tool(self, name: str, args: dict):
         import time
@@ -474,6 +604,12 @@ class ToolAgent(A2AServer):
         logger.info(f"Started {self.name} with A2A on port {self.a2a_port}, MCP on port {self.mcp_port}, OpenAI API on port {api_port}")
         
         return a2a_thread, mcp_thread, api_thread
+
+    def shutdown(self):
+        """Clean shutdown of the agent, stopping all background threads."""
+        logger.info(f"Shutting down {self.name}...")
+        self.stop_discovery()
+        logger.info(f"{self.name} shutdown complete")
 
     def handle_message(self, message: str) -> str:
         """Handle a message - to be overridden by subclasses."""
