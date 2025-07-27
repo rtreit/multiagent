@@ -39,13 +39,15 @@ if (!(Test-Path "registry.py")) {
     exit 1
 }
 
-# Check if virtual environment exists
-if (!(Test-Path ".venv\Scripts\python.exe")) {
-    Write-Error "Virtual environment not found. Please ensure .venv exists"
+# Check if uv is available
+try {
+    $null = Get-Command "uv" -ErrorAction Stop
+} catch {
+    Write-Error "uv command not found. Please install uv package manager"
     exit 1
 }
 
-$python = ".\.venv\Scripts\python.exe"
+$python = "uv run python"
 
 Write-Host "🚀 Starting Multi-Agent System with OpenAI API Support..." -ForegroundColor Green
 Write-Host "🎯 Performance Improvement: <1s response times vs 12+s with legacy GUI" -ForegroundColor Cyan
@@ -65,7 +67,7 @@ $processes = @()
 
 try {
     # Start Registry
-    $registryCmd = "cd '$PWD'; & '$python' registry.py"
+    $registryCmd = "cd '$PWD'; uv run python registry.py"
     $registryProcess = Start-Service "Registry" $registryCmd "9010"
     $processes += $registryProcess
 
@@ -73,22 +75,22 @@ try {
     Start-Sleep 5
 
     # Start Math Agent (A2A: 9011, MCP: 8021, OpenAI API: 10011)
-    $mathCmd = "cd '$PWD'; & '$python' -m agents.math_agent http://localhost:9010 9011 8021"
+    $mathCmd = "cd '$PWD'; uv run python -m agents.math_agent http://localhost:9010 9011 8021"
     $mathProcess = Start-Service "Math Agent" $mathCmd "9011"
     $processes += $mathProcess
 
     # Start Quote Agent (A2A: 9012, MCP: 8022, OpenAI API: 10012)
-    $quoteCmd = "cd '$PWD'; & '$python' -m agents.quote_agent http://localhost:9010 9012 8022"
+    $quoteCmd = "cd '$PWD'; uv run python -m agents.quote_agent http://localhost:9010 9012 8022"
     $quoteProcess = Start-Service "Quote Agent" $quoteCmd "9012"
     $processes += $quoteProcess
 
     # Start Search Agent (A2A: 9013, MCP: 8023, OpenAI API: 10013)
-    $searchCmd = "cd '$PWD'; & '$python' -m agents.search_agent http://localhost:9010 9013 8023"
+    $searchCmd = "cd '$PWD'; uv run python -m agents.search_agent http://localhost:9010 9013 8023"
     $searchProcess = Start-Service "Search Agent" $searchCmd "9013"
     $processes += $searchProcess
 
     # Start LLM Agent (A2A: 9014, MCP: 8024, OpenAI API: 10014)
-    $llmCmd = "cd '$PWD'; & '$python' -m agents.llm_agent http://localhost:9010 9014 8024"
+    $llmCmd = "cd '$PWD'; uv run python -m agents.llm_agent http://localhost:9010 9014 8024"
     $llmProcess = Start-Service "LLM Agent" $llmCmd "9014"
     $processes += $llmProcess
 
@@ -99,11 +101,11 @@ try {
     if (!$NoGUI) {
         if ($UseOldGUI) {
             Write-Host "⚠️  Starting legacy A2A GUI (slow performance)" -ForegroundColor Yellow
-            $guiCmd = "cd '$PWD'; & '$python' gui_legacy.py"
+            $guiCmd = "cd '$PWD'; uv run python gui_legacy.py"
             $guiProcess = Start-Service "Legacy GUI" $guiCmd "8000"
         } else {
             Write-Host "🚀 Starting high-performance OpenAI GUI" -ForegroundColor Green
-            $guiCmd = "cd '$PWD'; & '$python' gui.py"
+            $guiCmd = "cd '$PWD'; uv run python gui.py"
             $guiProcess = Start-Service "OpenAI GUI" $guiCmd "8080"
         }
         $processes += $guiProcess

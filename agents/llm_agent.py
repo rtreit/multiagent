@@ -93,34 +93,77 @@ class LangGraphToolAgent(ToolAgent):
             text_input = message_input.content.text
             logger.info(f"[LLM] Received A2A message: '{text_input}'")
         
-        # Try to use OpenAI API if available
-        try:
-            # Check if we have OpenAI API key
-            if os.environ.get("OPENAI_API_KEY"):
-                import openai
+        # Check if this is a query about local agents/system capabilities
+        agent_discovery_keywords = ['agents', 'skills', 'capabilities', 'interact with', 'other agents', 
+                                   'available agents', 'what can you do', 'system agents']
+        
+        if any(keyword in text_input.lower() for keyword in agent_discovery_keywords):
+            # This is asking about local agents - use cached startup discovery
+            logger.info(f"[LLM] Detected agent discovery query, using cached agent discovery")
+            try:
+                # Use cached discovered agents from startup
+                discovered_agents = self.get_discovered_agents()
                 
-                # Set up OpenAI client
-                openai.api_key = os.environ.get("OPENAI_API_KEY")
+                agent_info = []
+                for agent_data in discovered_agents.values():
+                    agent_name = agent_data['name']
+                    agent_desc = agent_data['description']
+                    skills = agent_data['skills']
+                    
+                    if skills:
+                        skill_list = [f"'{skill['name']}' - {skill['description']}" for skill in skills]
+                        agent_info.append(f"**{agent_name}**: {agent_desc}\n  Skills: {', '.join(skill_list)}")
+                    else:
+                        agent_info.append(f"**{agent_name}**: {agent_desc}\n  Skills: None discovered")
                 
-                # Make API call to OpenAI
-                response = openai.chat.completions.create(
-                    model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
-                    messages=[
-                        {"role": "system", "content": "You are a helpful AI assistant. Provide accurate, concise answers to questions."},
-                        {"role": "user", "content": text_input}
-                    ],
-                    temperature=0.7,
-                    max_tokens=500
-                )
-                
-                text = response.choices[0].message.content
-                logger.info(f"[LLM] Used OpenAI API for response")
-                
-            else:
-                raise Exception("No OpenAI API key available")
-                
-        except Exception as e:
-            logger.warning(f"[LLM] OpenAI API failed ({e}), falling back to local logic")
+                if agent_info:
+                    text = f"I can interact with the following agents in this multi-agent system:\n\n" + "\n\n".join(agent_info)
+                    text += f"\n\nThese {len(discovered_agents)} agents work together through the A2A (Agent-to-Agent) protocol to coordinate complex tasks and share capabilities."
+                    text += f"\n\nDiscovery status: {'✓ Completed at startup' if self.is_discovery_completed() else '⚠ In progress'}"
+                else:
+                    discovery_status = "completed" if self.is_discovery_completed() else "still in progress"
+                    text = f"I don't currently see any other agents registered in the system (discovery {discovery_status}). The system supports Math, Quote, Search, and other specialized agents when they're running."
+                    
+            except Exception as e:
+                logger.warning(f"[LLM] Cached agent discovery failed ({e}), falling back to OpenAI API")
+                # Fall back to OpenAI if discovery fails
+                text = None
+        else:
+            # Not an agent discovery query, try OpenAI API first
+            text = None
+        
+        # If we haven't handled the query yet, try OpenAI API
+        if text is None:
+            try:
+                # Check if we have OpenAI API key
+                api_key = os.environ.get("OPENAI_API_KEY")
+                if api_key:
+                    import openai
+                    
+                    # Set up OpenAI client
+                    client = openai.OpenAI(api_key=api_key)
+                    
+                    # Make API call to OpenAI
+                    response = client.chat.completions.create(
+                        model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+                        messages=[
+                            {"role": "system", "content": "You are a helpful AI assistant. Provide accurate, concise answers to questions."},
+                            {"role": "user", "content": text_input}
+                        ],
+                        temperature=0.7,
+                        max_tokens=500
+                    )
+                    
+                    text = response.choices[0].message.content
+                    logger.info(f"[LLM] Used OpenAI API for response")
+                    
+                else:
+                    logger.info(f"[LLM] No OpenAI API key found in environment")
+                    raise Exception("No OpenAI API key available")
+                    
+            except Exception as e:
+                logger.warning(f"[LLM] OpenAI API failed ({e}), using fallback response")
+                text = None
             
             # Check if this is a general conversation or a specific tool request
             if any(keyword in text_input.lower() for keyword in ['quote', 'search', 'calculate', 'math']):
@@ -145,24 +188,24 @@ class LangGraphToolAgent(ToolAgent):
                     result = anyio.run(lambda: self.executor.invoke({"input": text_input}))
                     text = result["output"]
             else:
-                # This is a general conversation, provide a helpful LLM response
-                responses = [
-                    "Hello! I'm the LLM Agent. I can help with general language tasks and coordinate with other agents.",
-                    "I'm a language model agent that can process text, answer questions, and work with other specialized agents.",
-                    "Hi there! I'm designed to handle various language tasks and can communicate with other agents in the system.",
-                    "Greetings! I'm the LLM Agent - I can help with text processing, questions, and orchestrating multi-agent workflows."
-                ]
-                # Simple hash-based selection to make responses consistent
-                response_index = hash(text_input) % len(responses)
-                text = responses[response_index]
-                
-                # Add capability information
-                text += ("\n\nI can help with:\n"
-                        "- General conversation and questions\n"
-                        "- Text analysis and processing\n"
-                        "- Coordinating with other agents (Math, Quote, Search)\n"
-                        "- Complex multi-step tasks\n"
-                        "Try asking me something specific!")
+                # This is a general conversation, provide a helpful fallback response
+                if text is None:
+                    # Provide a more informative fallback when OpenAI API isn't available
+                    text = f"I'm the LLM Agent, but I don't have access to OpenAI API to answer general questions like '{text_input}'."
+                    text += "\n\nI can help with specific tasks using other agents:"
+                    text += "\n- Ask about 'agents' or 'capabilities' to see available agents"
+                    text += "\n- Use keywords like 'quote', 'calculate', 'math', or 'search' for specific tasks"
+                    text += "\n- Coordinate multi-agent workflows"
+                    
+                    # Show discovered agents if available
+                    discovered_agents = self.get_discovered_agents()
+                    if discovered_agents:
+                        text += f"\n\nI can coordinate with {len(discovered_agents)} other agents:"
+                        for agent_name in discovered_agents.keys():
+                            text += f" {agent_name},"
+                        text = text.rstrip(",")
+                    
+                    text += "\n\nFor general questions, please provide an OpenAI API key in the environment."
         
         # Return appropriate response type
         if isinstance(message_input, str):

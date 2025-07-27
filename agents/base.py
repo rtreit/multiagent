@@ -57,6 +57,10 @@ class ToolAgent(A2AServer):
         # Track tools for A2A agent card skills
         self._tools = {}
         
+        # Agent discovery cache - populated at startup
+        self._discovered_agents = {}
+        self._discovery_completed = False
+        
         # Create Flask app for OpenAI-compatible API
         self.flask_app = Flask(f"{name}_api")
         self._setup_cors()
@@ -126,8 +130,74 @@ class ToolAgent(A2AServer):
     def start_a2a(self, host: str = "127.0.0.1", port: int = 0):
         logger.info(f"Enabling discovery with registry at {self._registry_url}")
         enable_discovery(self, self._registry_url)
+        
+        # Perform startup agent discovery
+        self._perform_startup_discovery()
+        
         logger.info(f"Starting A2A server on {host}:{port}")
         run_server(self, host=host, port=port)
+
+    def _perform_startup_discovery(self):
+        """Discover and cache other agents at startup."""
+        try:
+            from python_a2a.discovery.client import DiscoveryClient
+            discovery_client = DiscoveryClient(self._registry_url)
+            
+            # Wait a moment for other agents to potentially register
+            import time
+            time.sleep(2)
+            
+            agents = discovery_client.discover()
+            logger.info(f"[STARTUP DISCOVERY] Found {len(agents)} agents")
+            
+            for agent in agents:
+                # Don't include self in discovered agents
+                if agent.name != self.name:
+                    # Extract skills information
+                    skills = []
+                    if hasattr(agent, 'skills') and agent.skills:
+                        for skill in agent.skills:
+                            if hasattr(skill, 'name') and hasattr(skill, 'description'):
+                                skills.append({
+                                    'name': skill.name,
+                                    'description': skill.description,
+                                    'type': getattr(skill, 'type', 'function')
+                                })
+                            elif isinstance(skill, dict):
+                                skills.append({
+                                    'name': skill.get('name', 'unknown'),
+                                    'description': skill.get('description', 'no description'),
+                                    'type': skill.get('type', 'function')
+                                })
+                    
+                    self._discovered_agents[agent.name] = {
+                        'name': agent.name,
+                        'description': agent.description,
+                        'url': agent.url,
+                        'skills': skills
+                    }
+                    
+                    logger.info(f"[STARTUP DISCOVERY] Cached {agent.name}: {len(skills)} skills")
+            
+            self._discovery_completed = True
+            logger.info(f"[STARTUP DISCOVERY] Completed - cached {len(self._discovered_agents)} peer agents")
+            
+        except Exception as e:
+            logger.warning(f"[STARTUP DISCOVERY] Failed: {e}")
+            self._discovery_completed = False
+
+    def get_discovered_agents(self):
+        """Get the cached discovered agents from startup."""
+        return self._discovered_agents.copy()
+
+    def is_discovery_completed(self):
+        """Check if startup discovery has completed."""
+        return self._discovery_completed
+
+    def refresh_agent_discovery(self):
+        """Manually refresh the agent discovery cache."""
+        logger.info("Refreshing agent discovery cache...")
+        self._perform_startup_discovery()
 
     def call_tool(self, name: str, args: dict):
         import time

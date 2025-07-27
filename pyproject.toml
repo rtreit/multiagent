@@ -19,7 +19,8 @@ dependencies = [
     "requests",
     "langgraph",
     "pytest",
-    "langchain-mcp-adapters"
+    "langchain-mcp-adapters",
+    "langchain-openai>=0.3.28",
 ]
 
 [project.optional-dependencies]
