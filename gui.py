@@ -84,10 +84,20 @@ HTML = """<!doctype html>
                 const result = await response.json();
                 
                 if (result.success) {
-                    responseDiv.innerHTML = 
+                    let responseText = 
                         '<strong>Agent:</strong> ' + agent + '\\n' +
                         '<strong>Input:</strong> ' + msg + '\\n' +
                         '<strong>Response:</strong> ' + result.response;
+                    
+                    if (result.timing) {
+                        responseText += '\\n\\n<strong>Timing:</strong>';
+                        responseText += '\\n  Total: ' + result.timing.total;
+                        responseText += '\\n  Health Check: ' + result.timing.health_check;
+                        responseText += '\\n  A2A Client: ' + result.timing.client_create;
+                        responseText += '\\n  Send Message: ' + result.timing.send_message;
+                    }
+                    
+                    responseDiv.innerHTML = responseText;
                 } else {
                     responseDiv.innerHTML = '<span class="error">Error: ' + result.error + '</span>';
                 }
@@ -109,9 +119,14 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    import time
+    start_time = time.time()
+    
     data = request.get_json()
     agent = data.get('agent')
     text = data.get('message', '')
+    
+    print(f"[GUI] Starting request to {agent} at {time.time():.2f}")
     
     if agent not in AGENT_PORTS:
         return jsonify({'success': False, 'error': f'Unknown agent: {agent}'})
@@ -125,7 +140,11 @@ def chat():
     
     try:
         # First, check if the agent is responding
+        health_check_start = time.time()
         health_response = requests.get(url, timeout=5)
+        health_check_time = time.time() - health_check_start
+        print(f"[GUI] Health check took {health_check_time:.2f}s")
+        
         if health_response.status_code != 200:
             return jsonify({
                 'success': False, 
@@ -136,15 +155,37 @@ def chat():
         from python_a2a.client import A2AClient
         from python_a2a.models import Message, TextContent, MessageRole
         
+        client_create_start = time.time()
+        print(f"[GUI] About to create A2AClient for {url}")
         client = A2AClient(url)
-        message = Message(content=TextContent(text=text), role=MessageRole.USER)
+        client_create_time = time.time() - client_create_start
+        print(f"[GUI] A2A client creation took {client_create_time:.2f}s")
         
+        message_create_start = time.time()
+        message = Message(content=TextContent(text=text), role=MessageRole.USER)
+        message_create_time = time.time() - message_create_start
+        print(f"[GUI] Message creation took {message_create_time:.2f}s")
+        
+        send_message_start = time.time()
+        print(f"[GUI] About to call client.send_message() for {agent}")
         response = client.send_message(message)
+        send_message_time = time.time() - send_message_start
+        print(f"[GUI] send_message() took {send_message_time:.2f}s")
+        
+        total_time = time.time() - start_time
+        print(f"[GUI] Total request time: {total_time:.2f}s")
         
         return jsonify({
             'success': True, 
             'response': response.content.text,
-            'agent': agent
+            'agent': agent,
+            'timing': {
+                'total': f"{total_time:.2f}s",
+                'health_check': f"{health_check_time:.2f}s",
+                'client_create': f"{client_create_time:.2f}s",
+                'message_create': f"{message_create_time:.2f}s",
+                'send_message': f"{send_message_time:.2f}s"
+            }
         })
             
     except requests.exceptions.Timeout:

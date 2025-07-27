@@ -38,39 +38,57 @@ class SearchAgent(ToolAgent):
         math_client = A2AClient(agents["Math Agent"].url)
 
         def fetch_quote(state: WorkflowState):
-            logger.info(f"Fetching quote for topic: {state['topic']}")
+            step_start = time.time()
+            logger.info(f"[SEARCH] Fetching quote for topic: {state['topic']} at {time.time():.2f}")
             resp = quote_client.send_message(Message(content=TextContent(text=f"quote {state['topic']}"), role=MessageRole.USER))
-            logger.info(f"Received quote: {resp.content.text}")
+            step_time = time.time() - step_start
+            logger.info(f"[SEARCH] Quote fetch took {step_time:.2f}s - Received: {resp.content.text}")
             return {"quote": resp.content.text}
 
         def search_web(state: WorkflowState):
-            logger.info(f"Searching web for: {state['topic']}")
+            step_start = time.time()
+            logger.info(f"[SEARCH] Searching web for: {state['topic']} at {time.time():.2f}")
             try:
+                remote_start = time.time()
+                # Reduce timeout to avoid long waits
                 result = self.call_remote_tool(
                     "brave-search",
                     "brave_web_search",
                     {"query": state["topic"], "count": 3},
                 )
+                remote_time = time.time() - remote_start
+                logger.info(f"[SEARCH] Remote search took {remote_time:.2f}s")
                 result_count = result.count("Title:") if isinstance(result, str) else 0
             except Exception as e:
-                logger.warning(f"Remote search failed: {e}, falling back to local search")
+                fallback_start = time.time()
+                logger.warning(f"Remote search failed after timeout: {e}, falling back to local search")
                 results = self.call_tool("search", {"query": state["topic"]})
+                fallback_time = time.time() - fallback_start
+                logger.info(f"[SEARCH] Fallback search took {fallback_time:.2f}s")
                 result_count = len(results) if results else 0
-            logger.info(f"Found {result_count} results")
+            
+            step_time = time.time() - step_start
+            logger.info(f"[SEARCH] Total search step took {step_time:.2f}s - Found {result_count} results")
             return {"result_count": result_count}
 
         def multiply(state: WorkflowState):
+            step_start = time.time()
             expr = f"{len(state['quote'])}*{state['result_count']}"
-            logger.info(f"Calculating: {expr}")
+            logger.info(f"[SEARCH] Calculating: {expr} at {time.time():.2f}")
             resp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
-            logger.info(f"Result: {resp.content.text}")
+            step_time = time.time() - step_start
+            logger.info(f"[SEARCH] Math calculation took {step_time:.2f}s - Result: {resp.content.text}")
             product = resp.content.text
             
             # Store result using generic storage
+            storage_start = time.time()
             self.store_data("memory", "search_agent_history", f"{topic}:{product}")
+            storage_time = time.time() - storage_start
+            logger.info(f"[SEARCH] Storage attempt took {storage_time:.2f}s")
             
             return {"product": product}
 
+        workflow_start = time.time()
         graph = StateGraph(WorkflowState)
         graph.add_node("quote", fetch_quote)
         graph.add_node("search", search_web)
@@ -80,7 +98,18 @@ class SearchAgent(ToolAgent):
         graph.add_edge("search", "math")
         graph.add_edge("math", END)
         app = graph.compile()
+        
+        workflow_execution_start = time.time()
         final = app.invoke({"topic": topic})
+        workflow_execution_time = time.time() - workflow_execution_start
+        
+        total_workflow_time = time.time() - workflow_start
+        total_time = time.time() - start_time
+        
+        logger.info(f"[SEARCH] Workflow execution took {workflow_execution_time:.2f}s")
+        logger.info(f"[SEARCH] Total workflow setup+execution took {total_workflow_time:.2f}s")
+        logger.info(f"[SEARCH] Total message handling took {total_time:.2f}s")
+        
         text = f"Quote: {final['quote']}\nProduct: {final['product']}"
         return Message(content=TextContent(text=text), role=MessageRole.AGENT,
                        parent_message_id=message.message_id, conversation_id=message.conversation_id)

@@ -74,17 +74,35 @@ class ToolAgent(A2AServer):
         run_server(self, host=host, port=port)
 
     def call_tool(self, name: str, args: dict):
-        logger.info(f"Calling tool: {name} with args: {args}")
+        import time
+        start_time = time.time()
+        logger.info(f"[BASE] Calling tool: {name} with args: {args}")
+        
         async def _call():
+            client_start = time.time()
             async with self.client as c:
-                logger.info(f"Making async call to tool: {name}")
+                client_time = time.time() - client_start
+                logger.info(f"[BASE] Client context took {client_time:.2f}s")
+                
+                tool_call_start = time.time()
+                logger.info(f"[BASE] Making async call to tool: {name}")
                 result = await c.call_tool(name, args)
+                tool_call_time = time.time() - tool_call_start
+                logger.info(f"[BASE] Actual tool call took {tool_call_time:.2f}s")
+                
                 text = result.structured_content.get("result") if result.structured_content else None
                 if text is None and result.content:
                     text = result.content[0].text
-                logger.info(f"Tool {name} returned: {text}")
+                logger.info(f"[BASE] Tool {name} returned: {text}")
                 return text
-        return anyio.run(_call)
+        
+        anyio_start = time.time()
+        result = anyio.run(_call)
+        anyio_time = time.time() - anyio_start
+        
+        total_time = time.time() - start_time
+        logger.info(f"[BASE] anyio.run took {anyio_time:.2f}s, total call_tool took {total_time:.2f}s")
+        return result
 
     def call_remote_tool(self, server: str, tool: str, args: dict):
         logger.info(f"Calling remote tool {tool} on {server} with {args}")
@@ -133,6 +151,10 @@ class ToolAgent(A2AServer):
         This method uses the adapter pattern to work with different server implementations
         without hardcoding server-specific logic in the base agent.
         """
+        import time
+        start_time = time.time()
+        logger.debug(f"[BASE] Starting store_data to {server}")
+        
         if self.remote_client is None:
             logger.debug(f"Remote MCP client disabled, skipping storage to {server}")
             return False
@@ -166,8 +188,12 @@ class ToolAgent(A2AServer):
         result = self.safe_remote_tool_call(server, "store", {"key": key, "value": data})
         if result is not None:
             logger.debug(f"Successfully stored data to {server} using direct call")
+            total_time = time.time() - start_time
+            logger.debug(f"[BASE] store_data total time: {total_time:.2f}s")
             return True
             
+        total_time = time.time() - start_time
+        logger.debug(f"[BASE] store_data failed after {total_time:.2f}s")
         logger.debug(f"Failed to store data to {server}")
         return False
 
