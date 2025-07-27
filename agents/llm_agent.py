@@ -21,7 +21,6 @@ class LangGraphToolAgent(ToolAgent):
 
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
         super().__init__("LLM Agent", "LLM powered agent", a2a_port, mcp_port, registry_url)
-        self.start_mcp()
 
     def _make_llm(self):
         if ChatOpenAI is None or not os.environ.get("OPENAI_API_KEY"):

@@ -41,6 +41,7 @@ class ToolAgent(A2AServer):
         
         # Create Flask app for OpenAI-compatible API
         self.flask_app = Flask(f"{name}_api")
+        self._setup_cors()
         self._setup_openai_endpoints()
         
         if not os.environ.get("DISABLE_REMOTE_MCP"):
@@ -231,6 +232,26 @@ class ToolAgent(A2AServer):
         
         # Fallback: try direct tool call
         return self.safe_remote_tool_call(server, "retrieve", {"key": key})
+
+    def _setup_cors(self):
+        """Setup CORS headers for the Flask app."""
+        @self.flask_app.after_request
+        def after_request(response):
+            # Allow requests from any origin for development
+            # Use 'set' instead of 'add' to avoid duplicate headers
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+            response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+            return response
+            
+        # Handle preflight OPTIONS requests
+        @self.flask_app.route('/v1/chat/completions', methods=['OPTIONS'])
+        @self.flask_app.route('/v1/models', methods=['OPTIONS'])
+        @self.flask_app.route('/health', methods=['OPTIONS'])
+        def handle_preflight():
+            response = jsonify({'status': 'ok'})
+            # Headers are already set by after_request, no need to set them again
+            return response
 
     def _setup_openai_endpoints(self):
         """Setup OpenAI-compatible chat completion endpoints."""

@@ -25,7 +25,6 @@ class SearchAgent(ToolAgent):
         async def search(query: str) -> list:
             return [f"{query} result {i}" for i in range(3)]
         self.add_tool(search, "search")
-        self.start_mcp()
 
     def handle_message(self, message_input) -> str:
         """Handle message for OpenAI API (string input) or A2A Message object."""

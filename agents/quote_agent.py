@@ -15,7 +15,6 @@ class QuoteAgent(ToolAgent):
             ]
             return quotes[0]
         self.add_tool(random_quote, "random_quote")
-        self.start_mcp()
 
     def handle_message(self, message_input) -> str:
         """Handle message for OpenAI API (string input) or A2A Message object."""

@@ -10,7 +10,6 @@ class MathAgent(ToolAgent):
         async def calculate(expression: str) -> str:
             return str(eval(expression, {"__builtins__": {}}))
         self.add_tool(calculate, "calculate")
-        self.start_mcp()
 
     def handle_message(self, message_input) -> str:
         """Handle message for OpenAI API (string input) or A2A Message object."""
