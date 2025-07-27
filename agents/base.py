@@ -146,7 +146,8 @@ class ToolAgent(A2AServer):
         """Discover and cache other agents at startup with retries."""
         try:
             from python_a2a.discovery.client import DiscoveryClient
-            discovery_client = DiscoveryClient(self._registry_url)
+            discovery_client = DiscoveryClient(self.agent_card)
+            discovery_client.add_registry(self._registry_url)
             
             # Wait for registry and other agents to start with retries
             max_attempts = 8  # Increased from 5 to 8
@@ -281,7 +282,8 @@ class ToolAgent(A2AServer):
         """Perform a discovery update without the startup retries."""
         try:
             from python_a2a.discovery.client import DiscoveryClient
-            discovery_client = DiscoveryClient(self._registry_url)
+            discovery_client = DiscoveryClient(self.agent_card)
+            discovery_client.add_registry(self._registry_url)
             
             agents = discovery_client.discover()
             other_agents = [agent for agent in agents if agent.name != self.name]
