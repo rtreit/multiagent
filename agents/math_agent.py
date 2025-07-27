@@ -26,19 +26,43 @@ class MathAgent(ToolAgent):
             text = message_input.content.text
             print(f"[MATH] Received A2A message: '{text}'")
         
-        # Extract math expression
-        expr = text.strip().split(" ", 1)[-1] if " " in text else text.strip()
+        # Check if the message contains mathematical content
+        math_indicators = ['calculate', 'math', 'compute', 'solve', '+', '-', '*', '/', '=', '(', ')', 
+                          'sum', 'product', 'divide', 'multiply', 'square', 'root', 'power', '^']
         
-        tool_call_start = time.time()
-        result = self.call_tool("calculate", {"expression": expr})
-        tool_call_time = time.time() - tool_call_start
-        print(f"[MATH] Tool call took {tool_call_time:.2f}s")
+        # Also check if the content contains numbers
+        has_numbers = any(char.isdigit() for char in text)
+        has_math_keywords = any(indicator in text.lower() for indicator in math_indicators)
         
-        # Store result using generic storage (works with any compatible MCP server)
-        storage_start = time.time()
-        self.store_data("memory", "math_agent_history", f"{expr}={result}")
-        storage_time = time.time() - storage_start
-        print(f"[MATH] Storage took {storage_time:.2f}s")
+        if has_numbers and (has_math_keywords or any(op in text for op in ['+', '-', '*', '/', '=', '^', '(', ')'])):
+            # This looks like a math request, use the calculate tool
+            # Extract math expression
+            expr = text.strip().split(" ", 1)[-1] if " " in text else text.strip()
+            
+            try:
+                tool_call_start = time.time()
+                result = self.call_tool("calculate", {"expression": expr})
+                tool_call_time = time.time() - tool_call_start
+                print(f"[MATH] Tool call took {tool_call_time:.2f}s")
+                
+                # Store result using generic storage (works with any compatible MCP server)
+                storage_start = time.time()
+                self.store_data("memory", "math_agent_history", f"{expr}={result}")
+                storage_time = time.time() - storage_start
+                print(f"[MATH] Storage took {storage_time:.2f}s")
+                
+                response_text = f"The result of {expr} is {result}"
+            except Exception as e:
+                response_text = f"I couldn't calculate that expression. Error: {str(e)}. Please provide a valid mathematical expression."
+        else:
+            # This is not a math request, provide a helpful response
+            response_text = ("Hello! I'm the Math Agent. I can help you with mathematical calculations and expressions. "
+                           "Try asking me things like:\n"
+                           "- Calculate 2 + 2\n"
+                           "- What is 15 * 7?\n" 
+                           "- Solve 3^2 + 4^2\n"
+                           "- Compute the square root of 144\n"
+                           "Just include numbers and mathematical operations in your message!")
         
         total_time = time.time() - start_time
         print(f"[MATH] Total handle_message took {total_time:.2f}s")
@@ -46,11 +70,11 @@ class MathAgent(ToolAgent):
         # Return appropriate response type
         if isinstance(message_input, str):
             # OpenAI API: return string
-            return f"The result of {expr} is {result}"
+            return response_text
         else:
             # A2A: return Message object
             message_create_start = time.time()
-            response_msg = Message(content=TextContent(text=result), role=MessageRole.AGENT,
+            response_msg = Message(content=TextContent(text=response_text), role=MessageRole.AGENT,
                            parent_message_id=message_input.message_id, conversation_id=message_input.conversation_id)
             message_create_time = time.time() - message_create_start
             return response_msg

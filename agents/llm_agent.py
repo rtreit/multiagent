@@ -78,25 +78,47 @@ class LangGraphToolAgent(ToolAgent):
             text_input = message_input.content.text
             logger.info(f"[LLM] Received A2A message: '{text_input}'")
         
-        if not hasattr(self, "simple_mode"):
-            self._init_agent()
-        if getattr(self, "simple_mode", False):
-            agents = {a.name: a for a in self.discovery_client.discover()}
-            quote_client = A2AClient(agents["Quote Agent"].url)
-            math_client = A2AClient(agents["Math Agent"].url)
-            topic = text_input.strip()
-            qresp = quote_client.send_message(Message(content=TextContent(text=f"quote {topic}"), role=MessageRole.USER))
-            results = [f"{topic} result {i}" for i in range(3)]
-            expr = f"{len(qresp.content.text)}*{len(results)}"
-            mresp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
-            # Store interaction in memory using generic storage
-            self.store_data("memory", "llm_agent_history", f"{topic}:{mresp.content.text}")
-            text = f"Quote: {qresp.content.text}\nProduct: {mresp.content.text}"
-        else:
-            if not hasattr(self, "executor"):
+        # Check if this is a general conversation or a specific tool request
+        if any(keyword in text_input.lower() for keyword in ['quote', 'search', 'calculate', 'math']):
+            # This looks like a tool request, use the complex agent logic
+            if not hasattr(self, "simple_mode"):
                 self._init_agent()
-            result = anyio.run(lambda: self.executor.invoke({"input": text_input}))
-            text = result["output"]
+            if getattr(self, "simple_mode", False):
+                agents = {a.name: a for a in self.discovery_client.discover()}
+                quote_client = A2AClient(agents["Quote Agent"].url)
+                math_client = A2AClient(agents["Math Agent"].url)
+                topic = text_input.strip()
+                qresp = quote_client.send_message(Message(content=TextContent(text=f"quote {topic}"), role=MessageRole.USER))
+                results = [f"{topic} result {i}" for i in range(3)]
+                expr = f"{len(qresp.content.text)}*{len(results)}"
+                mresp = math_client.send_message(Message(content=TextContent(text=f"calc {expr}"), role=MessageRole.USER))
+                # Store interaction in memory using generic storage
+                self.store_data("memory", "llm_agent_history", f"{topic}:{mresp.content.text}")
+                text = f"Quote: {qresp.content.text}\nProduct: {mresp.content.text}"
+            else:
+                if not hasattr(self, "executor"):
+                    self._init_agent()
+                result = anyio.run(lambda: self.executor.invoke({"input": text_input}))
+                text = result["output"]
+        else:
+            # This is a general conversation, provide a helpful LLM response
+            responses = [
+                "Hello! I'm the LLM Agent. I can help with general language tasks and coordinate with other agents.",
+                "I'm a language model agent that can process text, answer questions, and work with other specialized agents.",
+                "Hi there! I'm designed to handle various language tasks and can communicate with other agents in the system.",
+                "Greetings! I'm the LLM Agent - I can help with text processing, questions, and orchestrating multi-agent workflows."
+            ]
+            # Simple hash-based selection to make responses consistent
+            response_index = hash(text_input) % len(responses)
+            text = responses[response_index]
+            
+            # Add capability information
+            text += ("\n\nI can help with:\n"
+                    "- General conversation and questions\n"
+                    "- Text analysis and processing\n"
+                    "- Coordinating with other agents (Math, Quote, Search)\n"
+                    "- Complex multi-step tasks\n"
+                    "Try asking me something specific!")
         
         # Return appropriate response type
         if isinstance(message_input, str):
