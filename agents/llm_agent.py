@@ -4,6 +4,14 @@ import anyio
 import logging
 from agents.base import ToolAgent
 from python_a2a.client import A2AClient
+
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available, skip
+    pass
 try:
     from langchain_openai import ChatOpenAI
     from langchain.agents import AgentExecutor
