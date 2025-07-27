@@ -72,9 +72,17 @@ def verify_mcp_servers():
     return all_healthy
 
 
+import pytest
+
 def test_individual_agents():
-    """Test each agent individually to verify functionality"""
+    """Test each agent individually to verify functionality."""
     print("\n=== Testing Individual Agents ===")
+
+    # Skip test if agents are not running (e.g., when executed standalone)
+    try:
+        requests.get(f"http://localhost:{MATH_PORT}/a2a", timeout=1)
+    except Exception:
+        pytest.skip("Agents not running")
     
     # Test Math Agent
     print("\n--- Testing Math Agent ---")

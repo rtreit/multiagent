@@ -52,7 +52,8 @@ class MathAgent(ToolAgent):
                 storage_time = time.time() - storage_start
                 print(f"[MATH] Storage took {storage_time:.2f}s")
                 
-                response_text = f"The result of {expr} is {result}"
+                # For compatibility with tests expecting a plain numeric result
+                response_text = str(result)
             except Exception as e:
                 response_text = f"I couldn't calculate that expression. Error: {str(e)}. Please provide a valid mathematical expression."
         else:
