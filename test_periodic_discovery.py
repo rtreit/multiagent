@@ -15,8 +15,9 @@ def test_periodic_discovery():
     print("🧪 Testing Periodic Agent Discovery...")
     print("=" * 60)
     
-    # Change to project directory
-    os.chdir(r'c:\Users\randy\Git\multiagent')
+    # Change to project directory (current repo root)
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(repo_root)
     
     processes = []
     
