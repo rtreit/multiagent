@@ -2,6 +2,8 @@ import threading
 import anyio
 import logging
 import os
+import time
+import json
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import FunctionTool
 from fastmcp.client import Client
@@ -11,6 +13,7 @@ from python_a2a.discovery.server import enable_discovery
 from python_a2a.server.http import run_server
 from python_a2a.models.agent import AgentCard
 from python_a2a.models import Message, TextContent, MessageRole
+from flask import Flask, request, jsonify, Response
 
 try:
     from .mcp_adapters import default_adapter_registry, MCPAdapterRegistry
@@ -27,11 +30,19 @@ class ToolAgent(A2AServer):
                  adapter_registry: MCPAdapterRegistry = None):
         card = AgentCard(name=name, description=description, url=f"http://localhost:{a2a_port}")
         super().__init__(agent_card=card)
+        self.name = name
+        self.description = description
+        self.a2a_port = a2a_port
         self.mcp = FastMCP(name=name)
         self.mcp_port = mcp_port
         self.client = Client(f"http://localhost:{mcp_port}/mcp/")
         self._registry_url = registry_url
         self.adapter_registry = adapter_registry or default_adapter_registry
+        
+        # Create Flask app for OpenAI-compatible API
+        self.flask_app = Flask(f"{name}_api")
+        self._setup_openai_endpoints()
+        
         if not os.environ.get("DISABLE_REMOTE_MCP"):
             self.remote_client = MultiServerMCPClient(
                 {
@@ -220,3 +231,115 @@ class ToolAgent(A2AServer):
         
         # Fallback: try direct tool call
         return self.safe_remote_tool_call(server, "retrieve", {"key": key})
+
+    def _setup_openai_endpoints(self):
+        """Setup OpenAI-compatible chat completion endpoints."""
+        
+        @self.flask_app.route('/v1/chat/completions', methods=['POST'])
+        def chat_completions():
+            try:
+                data = request.json
+                messages = data.get('messages', [])
+                model = data.get('model', self.name)
+                stream = data.get('stream', False)
+                
+                if not messages:
+                    return jsonify({'error': 'No messages provided'}), 400
+                
+                # Get the last user message
+                user_message = None
+                for msg in reversed(messages):
+                    if msg.get('role') == 'user':
+                        user_message = msg.get('content')
+                        break
+                
+                if not user_message:
+                    return jsonify({'error': 'No user message found'}), 400
+                
+                # Process the message through the agent
+                response_content = self.handle_message(user_message)
+                
+                # Format response in OpenAI format
+                response = {
+                    'id': f'chatcmpl-{int(time.time())}',
+                    'object': 'chat.completion',
+                    'created': int(time.time()),
+                    'model': model,
+                    'choices': [{
+                        'index': 0,
+                        'message': {
+                            'role': 'assistant',
+                            'content': response_content
+                        },
+                        'finish_reason': 'stop'
+                    }],
+                    'usage': {
+                        'prompt_tokens': len(user_message.split()),
+                        'completion_tokens': len(response_content.split()),
+                        'total_tokens': len(user_message.split()) + len(response_content.split())
+                    }
+                }
+                
+                if stream:
+                    # For streaming, return a simple response for now
+                    return Response(
+                        f"data: {json.dumps(response)}\n\ndata: [DONE]\n\n",
+                        mimetype='text/event-stream'
+                    )
+                else:
+                    return jsonify(response)
+                    
+            except Exception as e:
+                logger.error(f"Error in chat_completions: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.flask_app.route('/v1/models', methods=['GET'])
+        def list_models():
+            """List available models."""
+            return jsonify({
+                'object': 'list',
+                'data': [{
+                    'id': self.name,
+                    'object': 'model',
+                    'created': int(time.time()),
+                    'owned_by': 'multiagent-system'
+                }]
+            })
+        
+        @self.flask_app.route('/health', methods=['GET'])
+        def health_check():
+            """Health check endpoint."""
+            return jsonify({'status': 'healthy', 'agent': self.name})
+
+    def run_openai_api(self, host='127.0.0.1', port=None):
+        """Run the OpenAI-compatible API server."""
+        if port is None:
+            port = self.a2a_port + 1000  # Use different port for API
+        
+        logger.info(f"Starting OpenAI-compatible API for {self.name} on {host}:{port}")
+        self.flask_app.run(host=host, port=port, debug=False, threaded=True)
+
+    def start_services(self):
+        """Start both A2A and OpenAI API services."""
+        import threading
+        
+        # Start A2A server in a thread
+        a2a_thread = threading.Thread(target=lambda: self.start_a2a(host="127.0.0.1", port=self.a2a_port), daemon=True)
+        a2a_thread.start()
+        
+        # Start MCP server in a thread
+        mcp_thread = threading.Thread(target=self.start_mcp, daemon=True)
+        mcp_thread.start()
+        
+        # Start OpenAI API server in a thread
+        api_port = self.a2a_port + 1000
+        api_thread = threading.Thread(target=lambda: self.run_openai_api(port=api_port), daemon=True)
+        api_thread.start()
+        
+        logger.info(f"Started {self.name} with A2A on port {self.a2a_port}, MCP on port {self.mcp_port}, OpenAI API on port {api_port}")
+        
+        return a2a_thread, mcp_thread, api_thread
+
+    def handle_message(self, message: str) -> str:
+        """Handle a message - to be overridden by subclasses."""
+        return f"Agent {self.name} received: {message}"

@@ -4,6 +4,7 @@ from python_a2a.client import A2AClient
 # dummy search
 from typing import TypedDict
 import logging
+import time
 
 from langgraph.graph import StateGraph, START, END
 
@@ -26,9 +27,19 @@ class SearchAgent(ToolAgent):
         self.add_tool(search, "search")
         self.start_mcp()
 
-    def handle_message(self, message: Message) -> Message:
-        topic = message.content.text.strip()
-        logger.info(f"Received message: '{topic}'")
+    def handle_message(self, message_input) -> str:
+        """Handle message for OpenAI API (string input) or A2A Message object."""
+        start_time = time.time()
+        
+        # Handle both string input (for OpenAI API) and Message object (for A2A)
+        if isinstance(message_input, str):
+            # OpenAI API path
+            topic = message_input
+            logger.info(f"[SEARCH] Received OpenAI message: '{topic}'")
+        else:
+            # A2A path (Message object)
+            topic = message_input.content.text.strip()
+            logger.info(f"[SEARCH] Received A2A message: '{topic}'")
         
         logger.info("Discovering available agents...")
         agents = {a.name: a for a in self.discovery_client.discover()}
@@ -111,8 +122,15 @@ class SearchAgent(ToolAgent):
         logger.info(f"[SEARCH] Total message handling took {total_time:.2f}s")
         
         text = f"Quote: {final['quote']}\nProduct: {final['product']}"
-        return Message(content=TextContent(text=text), role=MessageRole.AGENT,
-                       parent_message_id=message.message_id, conversation_id=message.conversation_id)
+        
+        # Return appropriate response type
+        if isinstance(message_input, str):
+            # OpenAI API: return string
+            return f"Search results for '{topic}':\n{text}"
+        else:
+            # A2A: return Message object
+            return Message(content=TextContent(text=text), role=MessageRole.AGENT,
+                           parent_message_id=message_input.message_id, conversation_id=message_input.conversation_id)
 
 def main():
     import sys
@@ -121,8 +139,17 @@ def main():
     mcp_port = int(sys.argv[3])
     logger.info(f"Starting Search Agent with registry: {registry}, port: {port}, mcp_port: {mcp_port}")
     agent = SearchAgent(port, mcp_port, registry)
-    logger.info(f"Starting A2A server on port {port}")
-    agent.start_a2a(port=port)
+    
+    # Start all services (A2A, MCP, and OpenAI API)
+    threads = agent.start_services()
+    
+    # Keep the main thread alive
+    try:
+        for thread in threads:
+            thread.join()
+    except KeyboardInterrupt:
+        logger.info("Shutting down Search Agent...")
+        return
 
 if __name__ == "__main__":
     main()

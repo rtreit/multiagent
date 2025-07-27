@@ -66,14 +66,26 @@ class LangGraphToolAgent(ToolAgent):
         super().start_mcp()
         self._init_agent()
 
-    def handle_message(self, message: Message) -> Message:
+    def handle_message(self, message_input) -> str:
+        """Handle message for OpenAI API (string input) or A2A Message object."""
+        
+        # Handle both string input (for OpenAI API) and Message object (for A2A)
+        if isinstance(message_input, str):
+            # OpenAI API path
+            text_input = message_input
+            logger.info(f"[LLM] Received OpenAI message: '{text_input}'")
+        else:
+            # A2A path (Message object)
+            text_input = message_input.content.text
+            logger.info(f"[LLM] Received A2A message: '{text_input}'")
+        
         if not hasattr(self, "simple_mode"):
             self._init_agent()
         if getattr(self, "simple_mode", False):
             agents = {a.name: a for a in self.discovery_client.discover()}
             quote_client = A2AClient(agents["Quote Agent"].url)
             math_client = A2AClient(agents["Math Agent"].url)
-            topic = message.content.text.strip()
+            topic = text_input.strip()
             qresp = quote_client.send_message(Message(content=TextContent(text=f"quote {topic}"), role=MessageRole.USER))
             results = [f"{topic} result {i}" for i in range(3)]
             expr = f"{len(qresp.content.text)}*{len(results)}"
@@ -84,14 +96,21 @@ class LangGraphToolAgent(ToolAgent):
         else:
             if not hasattr(self, "executor"):
                 self._init_agent()
-            result = anyio.run(lambda: self.executor.invoke({"input": message.content.text}))
+            result = anyio.run(lambda: self.executor.invoke({"input": text_input}))
             text = result["output"]
-        return Message(
-            role=MessageRole.AGENT,
-            content=TextContent(text=text),
-            parent_message_id=message.message_id,
-            conversation_id=message.conversation_id,
-        )
+        
+        # Return appropriate response type
+        if isinstance(message_input, str):
+            # OpenAI API: return string
+            return text
+        else:
+            # A2A: return Message object
+            return Message(
+                role=MessageRole.AGENT,
+                content=TextContent(text=text),
+                parent_message_id=message_input.message_id,
+                conversation_id=message_input.conversation_id,
+            )
 
 
 def main():
@@ -100,7 +119,17 @@ def main():
     port = int(sys.argv[2])
     mcp_port = int(sys.argv[3])
     agent = LangGraphToolAgent(port, mcp_port, registry)
-    agent.start_a2a(port=port)
+    
+    # Start all services (A2A, MCP, and OpenAI API)
+    threads = agent.start_services()
+    
+    # Keep the main thread alive
+    try:
+        for thread in threads:
+            thread.join()
+    except KeyboardInterrupt:
+        logger.info("Shutting down LLM Agent...")
+        return
 
 
 if __name__ == "__main__":
