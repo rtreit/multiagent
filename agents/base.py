@@ -25,6 +25,20 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("base_agent")
 
+class AgentSkill:
+    """Represents a skill/tool available to an agent for A2A discovery."""
+    def __init__(self, name: str, description: str, skill_type: str = "function"):
+        self.name = name
+        self.description = description
+        self.type = skill_type
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "description": self.description,
+            "type": self.type
+        }
+
 class ToolAgent(A2AServer):
     def __init__(self, name: str, description: str, a2a_port: int, mcp_port: int, registry_url: str, 
                  adapter_registry: MCPAdapterRegistry = None):
@@ -93,17 +107,17 @@ class ToolAgent(A2AServer):
     def _update_agent_card_skills(self):
         """Update the A2A agent card with current tool list."""
         skills = [
-            {
-                "name": tool_info["name"],
-                "description": tool_info["description"],
-                "type": tool_info["type"]
-            }
+            AgentSkill(
+                name=tool_info["name"],
+                description=tool_info["description"],
+                skill_type=tool_info["type"]
+            )
             for tool_info in self._tools.values()
         ]
         
         # Update the agent card skills
         self.agent_card.skills = skills
-        logger.info(f"Updated agent card skills: {[skill['name'] for skill in skills]}")
+        logger.info(f"Updated agent card skills: {[skill.name for skill in skills]}")
 
     def start_mcp(self):
         logger.info(f"Starting MCP server on port {self.mcp_port}")
