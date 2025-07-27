@@ -130,15 +130,22 @@ class ToolAgent(A2AServer):
         threading.Thread(target=self.mcp.run, kwargs={"transport": "http", "host": "127.0.0.1", "port": self.mcp_port}, daemon=True).start()
 
     def start_a2a(self, host: str = "127.0.0.1", port: int = 0):
+        """Start the A2A server without blocking on discovery."""
+
         logger.info(f"Enabling discovery with registry at {self._registry_url}")
         enable_discovery(self, self._registry_url)
-        
-        # Perform startup agent discovery
-        self._perform_startup_discovery()
-        
+
+        # Run startup discovery in the background so the server can start quickly
+        discovery_thread = threading.Thread(
+            target=self._perform_startup_discovery,
+            daemon=True,
+            name=f"{self.name}_startup_discovery",
+        )
+        discovery_thread.start()
+
         # Start periodic discovery in background
         self._start_periodic_discovery()
-        
+
         logger.info(f"Starting A2A server on {host}:{port}")
         run_server(self, host=host, port=port)
 
