@@ -8,6 +8,7 @@ class MathAgent(ToolAgent):
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
         super().__init__("Math Agent", "Performs math operations", a2a_port, mcp_port, registry_url)
         async def calculate(expression: str) -> str:
+            """Evaluates mathematical expressions and returns the result."""
             return str(eval(expression, {"__builtins__": {}}))
         self.add_tool(calculate, "calculate")
 

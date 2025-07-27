@@ -29,6 +29,13 @@ class LangGraphToolAgent(ToolAgent):
 
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
         super().__init__("LLM Agent", "LLM powered agent", a2a_port, mcp_port, registry_url)
+        
+        # Add core LLM reasoning tool
+        async def reason(query: str) -> str:
+            """Provides intelligent reasoning and analysis using OpenAI GPT models for complex questions and tasks."""
+            return self.handle_message(query)
+        
+        self.add_tool(reason, "reason")
 
     def _make_llm(self):
         if ChatOpenAI is None or not os.environ.get("OPENAI_API_KEY"):

@@ -8,6 +8,7 @@ class QuoteAgent(ToolAgent):
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
         super().__init__("Quote Agent", "Provides random quotes", a2a_port, mcp_port, registry_url)
         async def random_quote(topic: str) -> str:
+            """Generates inspirational quotes related to the specified topic."""
             quotes = [
                 "Life is what happens when you're busy making other plans.",
                 "To be or not to be, that is the question.",

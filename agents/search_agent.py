@@ -23,6 +23,7 @@ class SearchAgent(ToolAgent):
     def __init__(self, a2a_port: int, mcp_port: int, registry_url: str):
         super().__init__("Search Agent", "Searches the web and coordinates others", a2a_port, mcp_port, registry_url)
         async def search(query: str) -> list:
+            """Performs web search and returns a list of search results for the given query."""
             return [f"{query} result {i}" for i in range(3)]
         self.add_tool(search, "search")
 

@@ -28,7 +28,8 @@ logger = logging.getLogger("base_agent")
 class ToolAgent(A2AServer):
     def __init__(self, name: str, description: str, a2a_port: int, mcp_port: int, registry_url: str, 
                  adapter_registry: MCPAdapterRegistry = None):
-        card = AgentCard(name=name, description=description, url=f"http://localhost:{a2a_port}")
+        # Initialize with empty skills list - will be populated as tools are added
+        card = AgentCard(name=name, description=description, url=f"http://localhost:{a2a_port}", skills=[])
         super().__init__(agent_card=card)
         self.name = name
         self.description = description
@@ -38,6 +39,9 @@ class ToolAgent(A2AServer):
         self.client = Client(f"http://localhost:{mcp_port}/mcp/")
         self._registry_url = registry_url
         self.adapter_registry = adapter_registry or default_adapter_registry
+        
+        # Track tools for A2A agent card skills
+        self._tools = {}
         
         # Create Flask app for OpenAI-compatible API
         self.flask_app = Flask(f"{name}_api")
@@ -74,6 +78,32 @@ class ToolAgent(A2AServer):
     def add_tool(self, fn, name: str):
         logger.info(f"Adding tool: {name}")
         self.mcp.add_tool(FunctionTool.from_function(fn, name=name))
+        
+        # Track tool for A2A agent card skills
+        tool_info = {
+            "name": name,
+            "description": fn.__doc__ or f"Tool: {name}",
+            "type": "function"
+        }
+        self._tools[name] = tool_info
+        
+        # Update agent card skills
+        self._update_agent_card_skills()
+    
+    def _update_agent_card_skills(self):
+        """Update the A2A agent card with current tool list."""
+        skills = [
+            {
+                "name": tool_info["name"],
+                "description": tool_info["description"],
+                "type": tool_info["type"]
+            }
+            for tool_info in self._tools.values()
+        ]
+        
+        # Update the agent card skills
+        self.agent_card.skills = skills
+        logger.info(f"Updated agent card skills: {[skill['name'] for skill in skills]}")
 
     def start_mcp(self):
         logger.info(f"Starting MCP server on port {self.mcp_port}")
